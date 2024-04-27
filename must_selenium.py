@@ -25,7 +25,7 @@ if __name__ == '__main__':
             driver.execute_script(
                 "window.scrollTo(0, document.body.scrollHeight);"
             )
-            time.sleep(2)
+            time.sleep(3)
             new_height = driver.execute_script(
                 "return document.body.scrollHeight"
             )
