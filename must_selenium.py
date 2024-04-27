@@ -5,12 +5,12 @@ from bs4 import BeautifulSoup
 from sqlalchemy import create_engine, insert
 from sqlalchemy.orm import Session
 
-from constants import URL_LIST
+from constants import URL_LIST, db_name
 from models import Base, Movie
 
 
 if __name__ == '__main__':
-    engine = create_engine('sqlite:///db.sqlite3')
+    engine = create_engine(f'sqlite:///sqlite3-{db_name}.db')
     Base.metadata.create_all(engine)
     overlap = set()
 
