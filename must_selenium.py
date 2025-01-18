@@ -5,16 +5,16 @@ from bs4 import BeautifulSoup
 from sqlalchemy import create_engine, insert
 from sqlalchemy.orm import Session
 
-from constants import URL_LIST, db_name
+from constants import URLS_LIST
 from models import Base, Movie
 
 
 if __name__ == '__main__':
-    engine = create_engine(f'sqlite:///sqlite3-{db_name}.db')
+    engine = create_engine(f'sqlite:///sqlite3.db')
     Base.metadata.create_all(engine)
     overlap = set()
 
-    for url in URL_LIST:
+    for url in URLS_LIST:
         movies_lst = []
         driver = webdriver.Chrome()
         driver.get(url)
