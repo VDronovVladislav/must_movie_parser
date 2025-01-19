@@ -1,13 +1,14 @@
-import time
 import requests
-from urllib.parse import urljoin
+import re
+import time
+
 from sqlalchemy import create_engine, insert
 from sqlalchemy.orm import Session
 
 from selenium import webdriver
 from bs4 import BeautifulSoup
 
-from constants import MAIN_URL, HEADERS, API_URL
+from constants import MAIN_URL, HEADERS, API_URL, REVIEW_SUFFIX, SHOWS_SUFFIX, USER_ID
 from models import Base, Movie
 
 
@@ -17,6 +18,25 @@ def get_engine():
     return engine
 
 
+def get_user_id_to_parse(username):
+    """Функция получения id пользователя, чьи данные нужно спарсить."""
+    url = f'{MAIN_URL}/{username}'
+    response = requests.get(url).text
+    match = re.search(r'"user_id":(\d+)', response)
+    user_id = match.group(1)
+    return user_id
+
+
+def get_user_url(user_id):
+    """Функция подготовки user_url - пользователя, чьи данные парсим."""
+    return f'{MAIN_URL}/api/users/id/{user_id}'
+
+
+def get_api_url():
+    """Функция получения api_url - пользоветеля, для которого добавляем данные."""
+    return f'{MAIN_URL}/api/users/id/{USER_ID}/products'
+
+
 def parse_data(url):
     """Функция парсинга данных страницы."""
     driver = webdriver.Chrome()
@@ -24,7 +44,7 @@ def parse_data(url):
     last_height = driver.execute_script("return document.body.scrollHeight")
     while True:
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(4)
+        time.sleep(5)
         new_height = driver.execute_script("return document.body.scrollHeight")
         if new_height == last_height:
             break
@@ -34,68 +54,8 @@ def parse_data(url):
     return html
 
 
-def prepare_hrefs(html):
-    """Функция подготовки списка с cсылками на сериалы."""
-    soup = BeautifulSoup(html, 'html.parser')
-    content_a = soup.find_all('a', class_='poster js_item js_item_product')
-    href_list = []
-    for elem in content_a:
-        href = urljoin(MAIN_URL, elem['href'])
-        href_list.append(href)
-    return href_list
-
-
-def prepare_movies_data(html):
-    """Функция подготовки списка с id и рейтингами фильмов."""
-    soup = BeautifulSoup(html, 'html.parser')
-    content_a = soup.find_all('a', class_='poster js_item js_item_product')
-    movies_list = []
-    for elem in content_a:
-        id = elem['data-product']
-        try:
-            rate = elem.find('div', class_='poster__rate_stars').text
-        except AttributeError:
-            rate = None
-        movies_list.append((id, rate))
-    return movies_list
-
-
-def prepare_want_data(html):
-    """Функция подготовки списка с id фильмов."""
-    soup = BeautifulSoup(html, 'html.parser')
-    content_a = soup.find_all('a', class_='poster js_item')
-    movies_list = []
-    for elem in content_a:
-        id = elem['data-product']
-        movies_list.append(id)
-    return movies_list
-
-
-def prepare_series_data(href_list):
-    """Функция подготовки списка с id и рейтингами сезонов сериалов."""
-    series_list = []
-    for href in href_list:
-        html = parse_data(href)
-        soup = BeautifulSoup(html, 'html.parser')
-        content_div_active = soup.find('div', class_='profileProduct__season js_season m_active')
-        try:
-            rate = content_div_active.find('div', class_='poster__rate_stars').text
-        except AttributeError:
-            rate = None
-        series_list.append((content_div_active['data-season'], rate))
-        content_div = soup.find_all('div', class_='profileProduct__season js_season')
-        for elem in content_div:
-            id = elem['data-season']
-            try:
-                rate = elem.find('div', class_='poster__rate_stars').text
-            except AttributeError:
-                rate = None
-            series_list.append((id, rate))
-    return series_list
-
-
 def prepare_db_data(html):
-    """Функция подготовки списка с названием фильма и ссылкой на постер."""
+    """Функция подготовки списка с названием фильма и ссылкой на постер (парсинг HTML)."""
     movies_list = []
     soup = BeautifulSoup(html, 'html.parser')
     content_div = soup.find('div', class_='profile__list_content js_items')
@@ -107,6 +67,60 @@ def prepare_db_data(html):
         href = poster_art['style'].split('"')[1]
         movies_list.append((title, href))
     return movies_list
+
+
+def create_data_list(url, ids_list):
+    """Функция получения списка с данными для дальнейшего добавления."""
+    left = 0
+    right = 100
+    data_list = []
+    while left < len(ids_list):
+        data = {
+            "ids": ids_list[left:right]
+        }
+        response = requests.post(url, json=data).json()
+        if 'watched_seasons' in response[0].keys():
+            for elem in response:
+                seasons = elem['watched_seasons']
+                for season in seasons:
+                    data_list.append(season)
+        elif 'user_product_info' in response[0].keys():
+            for elem in response:
+                movie_id = elem['user_product_info']['product_id']
+                rate = elem['user_product_info']['rate']
+                data_list.append((movie_id, rate))
+        left += 100
+        right += 100
+    return data_list
+
+
+def create_want_data(url):
+    """Функция подготовки списка с id фильмов (API)."""
+    response = requests.get(url).json()
+    want_list = response['lists']['want']
+    return want_list
+
+
+def create_watched_data(url):
+    """Функция подготовки списка с id и рейтингами фильмов (API)."""
+    response = requests.get(url).json()
+    watched_list = response['lists']['watched']
+    info_url = f'{url}/{REVIEW_SUFFIX}'
+    movies_list = create_data_list(info_url, watched_list)
+    return movies_list
+
+
+def create_shows_data(url):
+    """Функция подготовки списка с id и рейтингами сезонов сериалов (API)."""
+    response = requests.get(url).json()
+    shows_list = response['lists']['shows']
+    print(len(shows_list))
+    stats_url = f'{url}/{SHOWS_SUFFIX}'
+    watched_seasons = create_data_list(stats_url, shows_list) 
+    info = f'{url}/{REVIEW_SUFFIX}'
+    series_list = create_data_list(info, watched_seasons)
+    print(series_list)
+    return series_list
 
 
 def create_db(overlap, engine):
@@ -127,24 +141,24 @@ def send_watched_request(data_list):
     for id, rate in data_list:
         data = {
             "status": "watched",
-            "rate": int(rate) if rate else rate,
+            "rate": rate,
             "review": {
                 "body": None
             }
         }
-        #url = f'{API_URL}/{id}'
-        url = urljoin(API_URL, id)
+        url_prefix = get_api_url()
+        url = f'{url_prefix}/{id}'
         response = requests.patch(url, json=data, headers=HEADERS)
         print(response.status_code)
 
 
-def send_want_requst(data_list):
+def send_want_request(data_list):
     """Функция отправки запросов на добавление фильмов в посмотрю."""
     for id in data_list:
         data = {
             "status": "want",
         }
-        #url = f'{API_URL}/{id}'
-        url = urljoin(API_URL, id)
+        url_prefix = get_api_url()
+        url = f'{url_prefix}/{id}'
         response = requests.patch(url, json=data, headers=HEADERS)
         print(response.status_code)    

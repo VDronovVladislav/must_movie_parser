@@ -1,34 +1,36 @@
 from configs import configure_argument_parser
 from utils import (
-    parse_data, prepare_db_data, get_engine, create_db, get_user_url, get_user_id_to_parse, 
-    create_want_data, create_watched_data, create_shows_data, send_want_request, 
-    send_watched_request
+    parse_data, prepare_hrefs, prepare_movies_data, prepare_series_data, prepare_want_data,
+    prepare_db_data, get_engine, create_db, send_want_request, send_watched_request, 
 )
-from constants import USER_TO_PARSE, URLS_LIST
+from constants import MAIN_URL, USER_TO_PARSE, URLS_LIST
 
 
 def must_want():
     """Парсинг и добавление в базу фильмов в раздел 'Посмотрю'."""
-    user_id = get_user_id_to_parse(USER_TO_PARSE)
-    url = get_user_url(user_id)
-    want_list = create_want_data(url)
-    send_want_request(want_list)
+    url = f'{MAIN_URL}/{USER_TO_PARSE}/want'
+    parsed_data = parse_data(url)
+    prepared_data = prepare_want_data(parsed_data)
+    print(len(prepared_data))
+    print(prepared_data[0])
+    send_want_request(prepared_data)
 
 
 def must_watched():
     """Парсинг и добавление в базу фильмов и оценок в раздел 'Просмотрены'."""
-    user_id = get_user_id_to_parse(USER_TO_PARSE)
-    url = get_user_url(user_id)
-    watched_list = create_watched_data(url)
-    #send_watched_request(watched_list)
+    url = f'{MAIN_URL}/{USER_TO_PARSE}/watched'
+    parsed_data = parse_data(url)
+    prepared_data = prepare_movies_data(parsed_data)
+    send_watched_request(prepared_data)
 
 
 def must_shows():
     """Парсинг и добавление в базу сериалов и оценок в раздел 'Сериалы'."""
-    user_id = get_user_id_to_parse(USER_TO_PARSE)
-    url = get_user_url(user_id)
-    shows_list = create_shows_data(url)
-    #send_watched_request(prepared_data)
+    url = f'{MAIN_URL}/{USER_TO_PARSE}/shows'
+    parsed_data = parse_data(url)
+    prepared_hrefs = prepare_hrefs(parsed_data)
+    prepared_data = prepare_series_data(prepared_hrefs)
+    send_watched_request(prepared_data)
 
 
 def must_db_create():

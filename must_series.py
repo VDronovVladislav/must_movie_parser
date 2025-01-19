@@ -4,7 +4,7 @@ import requests
 from selenium import webdriver
 from bs4 import BeautifulSoup
 
-from constants import vlad_new_url, CEST_HEADERS, vlad_url, MAIN_URL, selave_series_url, HREF_LIST, SERIES_DATA
+from constants import MAIN_URL
 
 
 def parse_data(url):
@@ -18,7 +18,7 @@ def parse_data(url):
         driver.execute_script(
             "window.scrollTo(0, document.body.scrollHeight);"
         )
-        #time.sleep(5)
+        time.sleep(5)
         new_height = driver.execute_script(
             "return document.body.scrollHeight"
         )
@@ -55,15 +55,15 @@ def prepare_data(href_list):
         except AttributeError:
             rate = None
         series_list.append((content_div_active['data-season'], rate))
-        # content_div = soup.find_all('div', class_='profileProduct__season js_season')
-        # for elem in content_div:
-        #     id = elem['data-season']
-        #     try:
-        #         rate = elem.find('div', class_='poster__rate_stars').text
-        #     except AttributeError:
-        #         rate = None
-        #     series_list.append((id, rate))
-    print(series_list)
+        content_div = soup.find_all('div', class_='profileProduct__season js_season')
+        for elem in content_div:
+            id = elem['data-season']
+            try:
+                rate = elem.find('div', class_='poster__rate_stars').text
+            except AttributeError:
+                rate = None
+            series_list.append((id, rate))
+    #print(series_list)
     return series_list
 
 
@@ -81,12 +81,13 @@ def send_request(series_list):
         print(response.status_code)
 
 
-#parsed_data = parse_data(selave_series_url)
-#prepared_hrefs = prepare_hrefs(parsed_data)
+parsed_data = parse_data('https://mustapp.com/@Cestlavie/shows')
+prepared_hrefs = prepare_hrefs(parsed_data)
 #print(prepared_hrefs)
-prepared_data = prepare_data(HREF_LIST)
+prepared_data = prepare_data(prepared_hrefs)
+print(len(prepared_data))
 #print(prepared_data)
-send_request(prepared_data)
+#send_request(prepared_data)
 
 # html = parse_data('https://mustapp.com/@Selave/1341454')
 # soup = BeautifulSoup(html, features='html.parser')
