@@ -161,9 +161,11 @@ cython_debug/
 
 # Мои тестовые файлы:
 test_files/
+old_version
+test_db
 .must_selenium_copy.py
 .must_parser.py
+sqlite3.db
 
-# Мои базы:
-sqlite3-Selave-ilyas_potash.db
-sqlite3-Selave-Pactasuntservanda-ilyas_potash.db
+
+

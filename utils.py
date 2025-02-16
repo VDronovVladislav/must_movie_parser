@@ -1,8 +1,12 @@
+import asyncio
+import aiohttp
 import requests
 import re
+from http import HTTPStatus
 
 from sqlalchemy import create_engine, insert
 from sqlalchemy.orm import Session
+from tqdm import tqdm
 
 from constants import (
     MAIN_URL, HEADERS, REVIEW_SUFFIX, SHOWS_SUFFIX, PRODUCT_SUFFIX, USER_ID, MOVIE_PREFIX_PATH
@@ -36,15 +40,13 @@ def get_api_url():
     return f'{MAIN_URL}/api/users/id/{USER_ID}/products'
 
 
-def create_data_list(url, ids_list):
+def create_data_list(url, ids_list, rating=None):
     """Функция получения списка с данными для дальнейшего добавления/создания БД."""
     left = 0
     right = 100
     data_list = []
     while left < len(ids_list):
-        data = {
-            "ids": ids_list[left:right]
-        }
+        data = { "ids": ids_list[left:right]}
         response = requests.post(url, json=data, headers={"accept-Language": "ru"}).json()
         if 'watched_seasons' in response[0].keys():
             for elem in response:
@@ -55,7 +57,9 @@ def create_data_list(url, ids_list):
             for elem in response:
                 movie_title = elem['product']['title']
                 movie_href = MOVIE_PREFIX_PATH + elem['product']['poster_file_path']
-                data_list.append((movie_title, movie_href))                    
+                movie_rate = elem['user_product_info']['rate'] or 1
+                if rating is None or movie_rate >= rating:
+                    data_list.append((movie_title, movie_href))
         elif 'user_product_info' in response[0].keys():
             for elem in response:
                 movie_id = elem['user_product_info']['product_id']
@@ -93,12 +97,12 @@ def create_shows_data(url):
     return series_list
 
 
-def create_db_data(url):
+def create_db_data(url, rating=None):
     """Функция подготовки списка с названием и ссылкой на постер фильма для создания БД (API)."""
     response = requests.get(url).json()
     watched_list = response['lists']['watched']
     info_url = f'{url}/{PRODUCT_SUFFIX}'
-    db_movies_list = create_data_list(info_url, watched_list)
+    db_movies_list = create_data_list(info_url, watched_list, rating)
     return db_movies_list
 
 
@@ -111,29 +115,38 @@ def create_db(overlap, engine):
         db_session.commit()
 
 
-def send_watched_request(data_list):
-    """Функция отправки запросов на добавление фильмов/сериалов в просмотренные."""
-    for id, rate in data_list:
+async def send_request(session, url_prefix, status, id, rate=None):
+    """Асинхронная функция отправки запросов на добавление фильмов/сериалов."""
+    if status == 'want':
+        data = {"status": status}
+    else:
         data = {
-            "status": "watched",
+            "status": status,
             "rate": rate,
-            "review": {
-                "body": None
-            }
+            "review": {"body": None}
         }
-        url_prefix = get_api_url()
-        url = f'{url_prefix}/{id}'
-        response = requests.patch(url, json=data, headers=HEADERS)
-        print(response.status_code)
+    url = f'{url_prefix}/{id}'
+    try:
+        response = await session.patch(url, json=data, headers=HEADERS)
+        if response.status != HTTPStatus.OK:
+            raise Exception(
+                f'Некорректный статус {response.status} при запросе {url}. '
+                'Проверьте MUST_TOKEN и USER_ID'
+            )
+    except aiohttp.ClientError as e:
+        print(f"Ошибка сети при запросе {url}: {e}")
 
 
-def send_want_request(data_list):
-    """Функция отправки запросов на добавление фильмов в посмотрю."""
-    for id in data_list:
-        data = {
-            "status": "want",
-        }
-        url_prefix = get_api_url()
-        url = f'{url_prefix}/{id}'
-        response = requests.patch(url, json=data, headers=HEADERS)
-        print(response.status_code)
+async def async_execute(data_list, status):
+    """Верхнеуровневая корутина формирования задач для цикла событий."""
+    url_prefix = get_api_url()
+    async with aiohttp.ClientSession() as session:
+        if status == 'want':
+            tasks = [send_request(session, url_prefix, status, id) for id in data_list]
+        else:
+            tasks = [send_request(session, url_prefix, status, id, rate) for id, rate in data_list]
+        result = [await i for i in tqdm(asyncio.as_completed(tasks), total=len(tasks))]
+            
+
+    
+
