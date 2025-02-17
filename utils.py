@@ -145,7 +145,8 @@ async def async_execute(data_list, status):
             tasks = [send_request(session, url_prefix, status, id) for id in data_list]
         else:
             tasks = [send_request(session, url_prefix, status, id, rate) for id, rate in data_list]
-        result = [await i for i in tqdm(asyncio.as_completed(tasks), total=len(tasks))]
+        for task in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
+            await task
             
 
     
